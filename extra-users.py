@@ -241,10 +241,15 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
 
         # Set password if provided
         if user.password:
-            code, _, err = run(["chpasswd"], verbose=verbose, dry_run=dry_run)
-            if code != 0:
-                logger.error("Failed to set password for '%s': %s", user.username, err)
-                raise RuntimeError(f"Failed to set password for '{user.username}': {err}")
+            if verbose or dry_run:
+                print(f"$ echo '<redacted>' | chpasswd")
+            logger.debug("Setting password via chpasswd for user: %s", user.username)
+            if not dry_run:
+                proc = subprocess.run(["chpasswd"], input=f"{user.username}:{user.password}", text=True, capture_output=True)
+                if proc.returncode != 0:
+                    logger.error("Failed to set password for '%s': %s", user.username, (proc.stderr or '').strip())
+                    raise RuntimeError(f"Failed to set password for '{user.username}': {(proc.stderr or '').strip()}")
+            logger.info("Password set for user: %s", user.username)
         return
 
     # User exists; align properties when specified
@@ -277,9 +282,8 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
             print(f"User up-to-date: {user.username}")
         logger.info("User up-to-date: %s", user.username)
 
-    # If password provided, set (affects both new and existing users)
+    # If password provided, set (for existing users)
     if user.password:
-        # chpasswd expects 'user:password' on stdin; use subprocess directly to pass input
         if verbose or dry_run:
             print(f"$ echo '<redacted>' | chpasswd")
         logger.debug("Setting password via chpasswd for user: %s", user.username)
