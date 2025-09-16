@@ -57,6 +57,27 @@ Run the PyInstaller binary:
 sudo ./extra-users
 ```
 
+## Install prebuilt binary
+
+Download and install the public binary to `/usr/local/bin/extra-users`:
+```bash
+sudo wget -O /usr/local/bin/extra-users \
+  https://github.com/yukanoe/extra-users/releases/download/1.0.0/extra-users-linux-x86_64
+sudo chmod +x /usr/local/bin/extra-users
+```
+
+Alternatively, using curl:
+```bash
+sudo curl -L -o /usr/local/bin/extra-users \
+  https://github.com/yukanoe/extra-users/releases/download/1.0.0/extra-users-linux-x86_64
+sudo chmod +x /usr/local/bin/extra-users
+```
+
+Then run:
+```bash
+sudo extra-users --verbose
+```
+
 ### Logging
 
 - Logs to `/var/log/extra-users.log` with rotation (1MB, keep 3 files). The directory is created if missing.

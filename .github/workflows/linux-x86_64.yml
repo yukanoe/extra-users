@@ -6,7 +6,7 @@ on:
       - "*"
 
 jobs:
-  build-release:
+  glibc-manylinux:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -15,26 +15,50 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Build in manylinux2014 (glibc-compatible)
+        uses: addnab/docker-run-action@v3
         with:
-          python-version: "3.11"
+          image: quay.io/pypa/manylinux2014_x86_64
+          options: -v ${{ github.workspace }}:/work -w /work
+          run: |
+            /opt/python/cp311-cp311/bin/pip install --upgrade pip pyinstaller
+            /opt/python/cp311-cp311/bin/pyinstaller --onefile --name extra-users extra-users.py
+            chmod +x dist/extra-users
+            mv dist/extra-users dist/extra-users-linux-x86_64
 
-      - name: Install PyInstaller
-        run: pip install pyinstaller
-
-      - name: Build binary
-        run: pyinstaller --onefile --name extra-users extra-users.py
-
-      - name: Prepare artifact
-        run: |
-          chmod +x dist/extra-users
-          mv dist/extra-users dist/extra-users-linux-x86_64
-
-      - name: Create GitHub Release
+      - name: Upload to GitHub Release (glibc)
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/extra-users-linux-x86_64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  musl-portable:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build on Alpine (musl) and staticx wrap
+        uses: addnab/docker-run-action@v3
+        with:
+          image: alpine:3.19
+          options: -v ${{ github.workspace }}:/work -w /work
+          run: |
+            apk add --no-cache python3 py3-pip patchelf upx
+            python3 -m pip install --upgrade pip pyinstaller staticx
+            pyinstaller --onefile --name extra-users extra-users.py
+            staticx dist/extra-users dist/extra-users-linux-musl-x86_64
+            chmod +x dist/extra-users-linux-musl-x86_64
+
+      - name: Upload to GitHub Release (musl portable)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/extra-users-linux-musl-x86_64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
