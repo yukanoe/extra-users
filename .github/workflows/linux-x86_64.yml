@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-release:
-    runs-on: ubuntu-20.04  # Sử dụng Ubuntu 20.04 với GLIBC 2.31
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -15,21 +15,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install PyInstaller
-        run: pip install pyinstaller
-
-      - name: Build binary
-        run: pyinstaller --onefile --name extra-users extra-users.py
+      - name: Build static binary in Alpine
+        run: |
+          docker run --rm -v ${PWD}:/workspace -w /workspace python:3.11-alpine bash -c "
+            apk add --no-cache gcc musl-dev linux-headers binutils &&
+            pip install pyinstaller staticx &&
+            pyinstaller --onefile --strip --name extra-users extra-users.py &&
+            staticx dist/extra-users dist/extra-users-static &&
+            chmod +x dist/extra-users-static
+          "
 
       - name: Prepare artifact
         run: |
-          chmod +x dist/extra-users
-          mv dist/extra-users dist/extra-users-linux-x86_64
+          mv dist/extra-users-static dist/extra-users-linux-x86_64
+
+      - name: Verify binary compatibility
+        run: |
+          file dist/extra-users-linux-x86_64
+          ldd dist/extra-users-linux-x86_64 || echo "Static binary - no dynamic dependencies"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
