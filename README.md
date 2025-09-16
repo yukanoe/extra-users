@@ -35,7 +35,8 @@ Example configuration:
       "username": "user_a",
       "group": "group_a",
       "home": null,
-      "shell": "/usr/sbin/nologin"
+      "shell": "/usr/sbin/nologin",
+      "password": null
     }
   ]
 }
@@ -44,6 +45,7 @@ Example configuration:
 Notes:
 - `home: null` lets the system choose a default (e.g. `/home/<username>`). You can provide an explicit path.
 - If `group` does not exist, the tool will create it (unless disabled via `--no-create-missing-group`).
+- `password`: if provided (plaintext), the tool will set it via `chpasswd`. Consider using other mechanisms (e.g., `chage`, SSH keys, or shadow management) for production security.
 
 ## Usage
 

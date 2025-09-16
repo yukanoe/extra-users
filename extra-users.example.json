@@ -4,7 +4,8 @@
         "username": "user_a",
         "group": "group_a",
         "home": null,
-        "shell": "/usr/sbin/nologin"
+        "shell": "/usr/sbin/nologin",
+        "password": "change_me"
       }
     ]
   }

@@ -28,6 +28,7 @@ class UserSpec:
     group: Optional[str]
     home: Optional[str]
     shell: Optional[str]
+    password: Optional[str]
 
 
 def parse_args() -> argparse.Namespace:
@@ -138,8 +139,19 @@ def validate_config(raw: Dict[str, Any]) -> List[UserSpec]:
         shell = item.get("shell")
         if shell is not None and not isinstance(shell, str):
             raise ValueError(f"users[{idx}].shell must be string or null")
+        password = item.get("password")
+        if password is not None and not isinstance(password, str):
+            raise ValueError(f"users[{idx}].password must be string or null")
 
-        specs.append(UserSpec(username=username, group=group, home=home, shell=shell))
+        specs.append(
+            UserSpec(
+                username=username,
+                group=group,
+                home=home,
+                shell=shell,
+                password=password,
+            )
+        )
 
     return specs
 
@@ -226,6 +238,13 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
         if verbose:
             print(f"Created user: {user.username}")
         logger.info("Created user: %s", user.username)
+
+        # Set password if provided
+        if user.password:
+            code, _, err = run(["chpasswd"], verbose=verbose, dry_run=dry_run)
+            if code != 0:
+                logger.error("Failed to set password for '%s': %s", user.username, err)
+                raise RuntimeError(f"Failed to set password for '{user.username}': {err}")
         return
 
     # User exists; align properties when specified
@@ -257,6 +276,19 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
         if verbose:
             print(f"User up-to-date: {user.username}")
         logger.info("User up-to-date: %s", user.username)
+
+    # If password provided, set (affects both new and existing users)
+    if user.password:
+        # chpasswd expects 'user:password' on stdin; use subprocess directly to pass input
+        if verbose or dry_run:
+            print(f"$ echo '<redacted>' | chpasswd")
+        logger.debug("Setting password via chpasswd for user: %s", user.username)
+        if not dry_run:
+            proc = subprocess.run(["chpasswd"], input=f"{user.username}:{user.password}", text=True, capture_output=True)
+            if proc.returncode != 0:
+                logger.error("Failed to set password for '%s': %s", user.username, (proc.stderr or '').strip())
+                raise RuntimeError(f"Failed to set password for '{user.username}': {(proc.stderr or '').strip()}")
+        logger.info("Password set for user: %s", user.username)
 
 
 def check_platform(verbose: bool) -> None:
