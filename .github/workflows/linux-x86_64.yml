@@ -26,12 +26,19 @@ jobs:
             pip install pyinstaller staticx &&
             pyinstaller --onefile --strip --name extra-users extra-users.py &&
             staticx dist/extra-users dist/extra-users-static &&
-            chmod +x dist/extra-users-static
+            chmod 755 dist/extra-users-static
           "
 
-      - name: Prepare artifact
+      - name: Fix permissions and prepare artifact
         run: |
+          sudo chown -R runner:runner dist/ 2>/dev/null || sudo chown -R $(whoami):$(whoami) dist/ 2>/dev/null || true
+          ls -la dist/
           mv dist/extra-users-static dist/extra-users-linux-x86_64
+
+      - name: Verify binary
+        run: |
+          file dist/extra-users-linux-x86_64
+          ls -la dist/extra-users-linux-x86_64
 
       - name: Test binary
         run: |
