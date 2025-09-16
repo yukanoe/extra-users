@@ -6,8 +6,10 @@ on:
       - "*"
 
 jobs:
-  glibc-manylinux:
+  build-release:
     runs-on: ubuntu-latest
+    container:
+      image: debian:10  # hoặc debian:11
     permissions:
       contents: write
     steps:
@@ -15,59 +17,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build on Ubuntu 20.04 (glibc-compatible)
-        uses: addnab/docker-run-action@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          image: ubuntu:20.04
-          options: -v ${{ github.workspace }}:/work -w /work
-          run: |
-            set -eux
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              python3 python3-venv python3-pip patchelf upx ca-certificates binutils
-            python3 -m venv /tmp/venv
-            . /tmp/venv/bin/activate
-            pip install --upgrade pip pyinstaller
-            pyinstaller --onefile --name extra-users extra-users.py
-            chmod +x dist/extra-users
-            mv dist/extra-users dist/extra-users-linux-x86_64
+          python-version: "3.11"
 
-      - name: Upload to GitHub Release (glibc)
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build binary
+        run: pyinstaller --onefile --name extra-users extra-users.py
+
+      - name: Prepare artifact
+        run: |
+          chmod +x dist/extra-users
+          mv dist/extra-users dist/extra-users-linux-x86_64
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/extra-users-linux-x86_64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  musl-portable:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Build on Alpine (musl) and staticx wrap
-        uses: addnab/docker-run-action@v3
-        with:
-          image: alpine:3.19
-          options: -v ${{ github.workspace }}:/work -w /work
-          run: |
-            set -eux
-            apk add --no-cache python3 py3-pip py3-virtualenv patchelf upx ca-certificates binutils
-            python3 -m virtualenv /tmp/venv
-            . /tmp/venv/bin/activate
-            pip install --upgrade pip pyinstaller staticx
-            pyinstaller --onefile --name extra-users extra-users.py
-            staticx dist/extra-users dist/extra-users-linux-musl-x86_64
-            chmod +x dist/extra-users-linux-musl-x86_64
-
-      - name: Upload to GitHub Release (musl portable)
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/extra-users-linux-musl-x86_64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
