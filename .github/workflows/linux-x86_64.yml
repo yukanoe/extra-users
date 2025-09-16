@@ -7,9 +7,7 @@ on:
 
 jobs:
   build-release:
-    runs-on: ubuntu-latest
-    container:
-      image: debian:10  # hoặc debian:11
+    runs-on: ubuntu-20.04  # Sử dụng Ubuntu 20.04 với GLIBC 2.31
     permissions:
       contents: write
     steps:
