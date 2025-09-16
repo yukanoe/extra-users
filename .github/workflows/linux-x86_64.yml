@@ -15,10 +15,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build on Debian 10 (glibc-compatible)
+      - name: Build on Ubuntu 20.04 (glibc-compatible)
         uses: addnab/docker-run-action@v3
         with:
-          image: debian:10-slim
+          image: ubuntu:20.04
           options: -v ${{ github.workspace }}:/work -w /work
           run: |
             set -eux
