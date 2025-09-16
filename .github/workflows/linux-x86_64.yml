@@ -15,14 +15,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build in manylinux2014 (glibc-compatible)
+      - name: Build on Debian 10 (glibc-compatible)
         uses: addnab/docker-run-action@v3
         with:
-          image: quay.io/pypa/manylinux2014_x86_64
+          image: debian:10-slim
           options: -v ${{ github.workspace }}:/work -w /work
           run: |
-            /opt/python/cp311-cp311/bin/pip install --upgrade pip pyinstaller
-            /opt/python/cp311-cp311/bin/pyinstaller --onefile --name extra-users extra-users.py
+            set -euo pipefail
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              python3 python3-venv python3-pip patchelf upx ca-certificates
+            python3 -m venv /tmp/venv
+            . /tmp/venv/bin/activate
+            pip install --upgrade pip pyinstaller
+            pyinstaller --onefile --name extra-users extra-users.py
             chmod +x dist/extra-users
             mv dist/extra-users dist/extra-users-linux-x86_64
 
@@ -49,8 +55,11 @@ jobs:
           image: alpine:3.19
           options: -v ${{ github.workspace }}:/work -w /work
           run: |
-            apk add --no-cache python3 py3-pip patchelf upx
-            python3 -m pip install --upgrade pip pyinstaller staticx
+            set -euo pipefail
+            apk add --no-cache python3 py3-pip python3-venv patchelf upx ca-certificates
+            python3 -m venv /tmp/venv
+            . /tmp/venv/bin/activate
+            pip install --upgrade pip pyinstaller staticx
             pyinstaller --onefile --name extra-users extra-users.py
             staticx dist/extra-users dist/extra-users-linux-musl-x86_64
             chmod +x dist/extra-users-linux-musl-x86_64
