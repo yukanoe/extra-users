@@ -12,6 +12,10 @@ from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 import shutil
+try:
+    import crypt as pycrypt  # type: ignore[import-not-found]  # Unix only
+except Exception:
+    pycrypt = None
 
 
 DEFAULT_CONFIG_PATH = "/etc/extra-users.json"
@@ -195,6 +199,28 @@ def user_in_group(username: str, group: str, verbose: bool, dry_run: bool) -> bo
     return False
 
 
+def password_matches(username: str, plaintext: str, verbose: bool, dry_run: bool) -> bool:
+    if dry_run:
+        return False
+    if pycrypt is None:
+        return False
+    # Read current hash from shadow
+    code, out, _ = run(["getent", "shadow", username], verbose=verbose, dry_run=False)
+    if code != 0 or not out:
+        return False
+    parts = out.split(":")
+    if len(parts) < 2:
+        return False
+    current_hash = parts[1]
+    if not current_hash or current_hash in ("*", "!"):
+        return False
+    try:
+        computed = pycrypt.crypt(plaintext, current_hash)
+    except Exception:
+        return False
+    return computed == current_hash
+
+
 def exists_in_getent(database: str, name: str, verbose: bool, dry_run: bool) -> bool:
     code, out, _ = run(["getent", database, name], verbose=verbose, dry_run=dry_run)
     # In dry-run, assume not existing to show intended actions; do not block creation
@@ -299,7 +325,7 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
                 logger.info("Added %s to group %s", user.username, user.group)
 
         # Set password if provided
-        if user.password:
+        if user.password and not password_matches(user.username, user.password, verbose, dry_run):
             if verbose or dry_run:
                 print(f"$ echo '<redacted>' | chpasswd")
             logger.debug("Setting password via chpasswd for user: %s", user.username)
@@ -363,8 +389,8 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
                 print(f"User up-to-date (no usermod available for further changes): {user.username}")
             logger.info("User up-to-date (no usermod available): %s", user.username)
 
-    # If password provided, set (for existing users)
-    if user.password:
+    # If password provided, set only if changed (for existing users)
+    if user.password and not password_matches(user.username, user.password, verbose, dry_run):
         if verbose or dry_run:
             print(f"$ echo '<redacted>' | chpasswd")
         logger.debug("Setting password via chpasswd for user: %s", user.username)
