@@ -11,6 +11,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+import shutil
 
 
 DEFAULT_CONFIG_PATH = "/etc/extra-users.json"
@@ -170,6 +171,10 @@ def run(cmd: List[str], verbose: bool = False, dry_run: bool = False) -> Tuple[i
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
+def command_exists(cmd_name: str) -> bool:
+    return shutil.which(cmd_name) is not None
+
+
 def exists_in_getent(database: str, name: str, verbose: bool, dry_run: bool) -> bool:
     code, out, _ = run(["getent", database, name], verbose=verbose, dry_run=dry_run)
     # In dry-run, assume not existing to show intended actions; do not block creation
@@ -194,7 +199,15 @@ def ensure_group(group: str, create_if_missing: bool, verbose: bool, dry_run: bo
         return
     if not create_if_missing:
         raise RuntimeError(f"Primary group missing and creation disabled: {group}")
-    code, _, err = run(["groupadd", group], verbose=verbose, dry_run=dry_run)
+    # Prefer shadow-utils 'groupadd'; fall back to Alpine/BusyBox 'addgroup'
+    if command_exists("groupadd"):
+        cmd = ["groupadd", group]
+    elif command_exists("addgroup"):
+        cmd = ["addgroup", group]
+    else:
+        raise RuntimeError("Neither 'groupadd' nor 'addgroup' found on PATH")
+
+    code, _, err = run(cmd, verbose=verbose, dry_run=dry_run)
     if code != 0:
         logger.error("Failed to create group '%s': %s", group, err)
         raise RuntimeError(f"Failed to create group '{group}': {err}")
@@ -224,13 +237,26 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
         ensure_group(user.group, create_if_missing=create_missing_group, verbose=verbose, dry_run=dry_run)
 
     if not user_exists(user.username, verbose, dry_run):
-        cmd = ["useradd", user.username]
-        if user.group:
-            cmd.extend(["-g", user.group])
-        if user.home:
-            cmd.extend(["-d", user.home, "-m"])  # create home directory if missing
-        if user.shell:
-            cmd.extend(["-s", user.shell])
+        # Prefer shadow-utils 'useradd'; fall back to Alpine/BusyBox 'adduser'
+        if command_exists("useradd"):
+            cmd = ["useradd", user.username]
+            if user.group:
+                cmd.extend(["-g", user.group])
+            if user.home:
+                cmd.extend(["-d", user.home, "-m"])  # create home directory if missing
+            if user.shell:
+                cmd.extend(["-s", user.shell])
+        elif command_exists("adduser"):
+            # BusyBox adduser: create with defaults then adjust
+            cmd = ["adduser", "-D"]
+            if user.home:
+                cmd.extend(["-h", user.home])
+            if user.shell:
+                cmd.extend(["-s", user.shell])
+            cmd.append(user.username)
+        else:
+            raise RuntimeError("Neither 'useradd' nor 'adduser' found on PATH")
+
         code, _, err = run(cmd, verbose=verbose, dry_run=dry_run)
         if code != 0:
             logger.error("Failed to create user '%s': %s", user.username, err)
@@ -238,6 +264,19 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
         if verbose:
             print(f"Created user: {user.username}")
         logger.info("Created user: %s", user.username)
+
+        # If created via BusyBox adduser and a primary group was requested, ensure group exists
+        # and add the user to that group (supplementary group on BusyBox).
+        if command_exists("adduser") and not command_exists("useradd") and user.group:
+            ensure_group(user.group, create_if_missing=create_missing_group, verbose=verbose, dry_run=dry_run)
+            if command_exists("addgroup"):
+                code, _, err = run(["addgroup", user.username, user.group], verbose=verbose, dry_run=dry_run)
+                if code != 0:
+                    logger.error("Failed to add user '%s' to group '%s': %s", user.username, user.group, err)
+                    raise RuntimeError(f"Failed to add user '{user.username}' to group '{user.group}': {err}")
+                if verbose:
+                    print(f"Added {user.username} to group: {user.group}")
+                logger.info("Added %s to group %s", user.username, user.group)
 
         # Set password if provided
         if user.password:
@@ -255,32 +294,53 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
     # User exists; align properties when specified
     current_home, current_shell = get_current_user_info(user.username, verbose, dry_run)
     modify_needed = False
-    cmd = ["usermod"]
-    if user.group:
-        # Align primary group if different (skipped if unknown current gid)
-        # usermod -g <group>
-        cmd.extend(["-g", user.group])
-        modify_needed = True
-    if user.home and (current_home is None or user.home != current_home):
-        cmd.extend(["-d", user.home])
-        modify_needed = True
-    if user.shell and (current_shell is None or user.shell != current_shell):
-        cmd.extend(["-s", user.shell])
-        modify_needed = True
+    if command_exists("usermod"):
+        cmd = ["usermod"]
+        if user.group:
+            cmd.extend(["-g", user.group])
+            modify_needed = True
+        if user.home and (current_home is None or user.home != current_home):
+            cmd.extend(["-d", user.home])
+            modify_needed = True
+        if user.shell and (current_shell is None or user.shell != current_shell):
+            cmd.extend(["-s", user.shell])
+            modify_needed = True
 
-    if modify_needed:
-        cmd.append(user.username)
-        code, _, err = run(cmd, verbose=verbose, dry_run=dry_run)
-        if code != 0:
-            logger.error("Failed to modify user '%s': %s", user.username, err)
-            raise RuntimeError(f"Failed to modify user '{user.username}': {err}")
-        if verbose:
-            print(f"Updated user: {user.username}")
-        logger.info("Updated user: %s", user.username)
+        if modify_needed:
+            cmd.append(user.username)
+            code, _, err = run(cmd, verbose=verbose, dry_run=dry_run)
+            if code != 0:
+                logger.error("Failed to modify user '%s': %s", user.username, err)
+                raise RuntimeError(f"Failed to modify user '{user.username}': {err}")
+            if verbose:
+                print(f"Updated user: {user.username}")
+            logger.info("Updated user: %s", user.username)
+        else:
+            if verbose:
+                print(f"User up-to-date: {user.username}")
+            logger.info("User up-to-date: %s", user.username)
     else:
-        if verbose:
-            print(f"User up-to-date: {user.username}")
-        logger.info("User up-to-date: %s", user.username)
+        # Without usermod (e.g., Alpine BusyBox), we can only adjust group membership via addgroup
+        changed = False
+        if user.group and command_exists("addgroup"):
+            # Ensure group exists then add user to it as a supplementary group
+            ensure_group(user.group, create_if_missing=True, verbose=verbose, dry_run=dry_run)
+            code, _, err = run(["addgroup", user.username, user.group], verbose=verbose, dry_run=dry_run)
+            if code != 0:
+                logger.error("Failed to add user '%s' to group '%s': %s", user.username, user.group, err)
+                raise RuntimeError(f"Failed to add user '{user.username}' to group '{user.group}': {err}")
+            changed = True
+            if verbose:
+                print(f"Ensured {user.username} is in group: {user.group}")
+            logger.info("Ensured %s is in group %s", user.username, user.group)
+
+        # Home and shell updates are skipped on systems without usermod
+        if changed:
+            logger.info("User updated with limited changes (no usermod available): %s", user.username)
+        else:
+            if verbose:
+                print(f"User up-to-date (no usermod available for further changes): {user.username}")
+            logger.info("User up-to-date (no usermod available): %s", user.username)
 
     # If password provided, set (for existing users)
     if user.password:
