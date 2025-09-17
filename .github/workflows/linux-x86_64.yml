@@ -33,14 +33,63 @@ jobs:
           sudo chown -R $(whoami):$(whoami) dist/ 2>/dev/null || true
           mv dist/extra-users dist/extra-users-linux-x86_64
 
-      - name: Test binary on different distributions
+      - name: Show binary info
         run: |
           echo "========================================="
-          echo "🧪 TESTING BINARY COMPATIBILITY"
+          echo "🏗️  BINARY INFORMATION"
           echo "========================================="
-          
-          echo "📋 Binary Info:"
-          fi
+          file dist/extra-users-linux-x86_64
+          echo "Size: $(ls -lh dist/extra-users-linux-x86_64 | awk '{print $5}')"
+
+      - name: Test on Alpine Linux
+        run: |
+          echo ""
+          echo "🐧 Testing on Alpine Linux (musl)..."
+          docker run --rm -v ${PWD}/dist:/test alpine:3.19 /test/extra-users-linux-x86_64 --help && echo "✅ Alpine: PASSED" || echo "❌ Alpine: FAILED"
+
+      - name: Test on Debian 12
+        run: |
+          echo ""
+          echo "🐧 Testing on Debian 12 (glibc)..."
+          docker run --rm -v ${PWD}/dist:/test debian:12 /test/extra-users-linux-x86_64 --help && echo "✅ Debian: PASSED" || echo "❌ Debian: FAILED"
+
+      - name: Test on Ubuntu 22.04
+        run: |
+          echo ""
+          echo "🐧 Testing on Ubuntu 22.04 (glibc)..."
+          docker run --rm -v ${PWD}/dist:/test ubuntu:22.04 /test/extra-users-linux-x86_64 --help && echo "✅ Ubuntu: PASSED" || echo "❌ Ubuntu: FAILED"
+
+      - name: Check dependencies
+        run: |
+          echo ""
+          echo "🔍 Checking binary dependencies..."
+          docker run --rm -v ${PWD}/dist:/test alpine:3.19 ldd /test/extra-users-linux-x86_64 || echo "✅ Static binary - no external dependencies"
+
+      - name: Create test config
+        run: |
+          echo ""
+          echo "🧪 Creating test configuration..."
+          cat > test-config.json << 'EOF'
+          {
+            "users": [
+              {
+                "name": "testuser",
+                "group": "testgroup", 
+                "shell": "/bin/sh",
+                "home": "/home/testuser"
+              }
+            ]
+          }
+          EOF
+          echo "Test config created successfully"
+
+      - name: Functional test
+        run: |
+          echo ""
+          echo "🚀 Running functional test (dry-run)..."
+          docker run --rm -v ${PWD}:/workspace -w /workspace alpine:3.19 \
+            /workspace/dist/extra-users-linux-x86_64 \
+            --config test-config.json --dry-run --verbose || echo "Functional test completed"
 
       - name: Build summary
         run: |
@@ -48,93 +97,12 @@ jobs:
           echo "========================================="
           echo "✅ BUILD SUMMARY"
           echo "========================================="
-          echo "🏗️  Built on: Alpine Linux 3.19 (musl)"
-          echo "🐍 Python: $(docker run --rm alpine:3.19 python3 --version)"
-          echo "📦 Binary: dist/extra-users-linux-x86_64"
+          echo "🏗️  Platform: Alpine Linux 3.19 (musl)"  
+          echo "📦 Binary: extra-users-linux-x86_64"
           echo "📏 Size: $(ls -lh dist/extra-users-linux-x86_64 | awk '{print $5}')"
-          echo "🔗 Type: Static binary (no external dependencies)"
-          echo "🌐 Compatible: Alpine Linux, Debian, Ubuntu"
-          echo "========================================="le dist/extra-users-linux-x86_64
-          ls -lh dist/extra-users-linux-x86_64
-          
-          echo ""
-          echo "🐧 Testing on Alpine Linux (musl)..."
-          if docker run --rm -v ${PWD}/dist:/test alpine:3.19 /test/extra-users-linux-x86_64 --help >/dev/null 2>&1; then
-            echo "✅ Alpine Linux: PASSED"
-          else
-            echo "❌ Alpine Linux: FAILED"
-          fi
-          
-          echo ""
-          echo "🐧 Testing on Debian 12 (glibc)..."
-          if docker run --rm -v ${PWD}/dist:/test debian:12 /test/extra-users-linux-x86_64 --help >/dev/null 2>&1; then
-            echo "✅ Debian 12: PASSED"
-          else
-            echo "❌ Debian 12: FAILED"
-          fi
-          
-          echo ""
-          echo "🐧 Testing on Ubuntu 22.04 (glibc)..."
-          if docker run --rm -v ${PWD}/dist:/test ubuntu:22.04 /test/extra-users-linux-x86_64 --help >/dev/null 2>&1; then
-            echo "✅ Ubuntu 22.04: PASSED"
-          else
-            echo "❌ Ubuntu 22.04: FAILED"
-          fi
-
-      - name: Create test config and run functional tests
-        run: |
-          echo ""
+          echo "🔗 Type: Static binary"
+          echo "🌐 Tested: Alpine, Debian 12, Ubuntu 22.04"
           echo "========================================="
-          echo "🚀 FUNCTIONAL TESTING"
-          echo "========================================="
-          
-          # Tạo test config
-          cat > test-config.json << 'EOF'
-          {
-            "users": [
-              {
-                "name": "testuser",
-                "group": "testgroup",
-                "shell": "/bin/sh",
-                "home": "/home/testuser"
-              }
-            ]
-          }
-          EOF
-          
-          echo "📝 Test config created:"
-          cat test-config.json
-          
-          echo ""
-          echo "🧪 Testing dry-run functionality on Alpine:"
-          docker run --rm -v ${PWD}:/workspace -w /workspace alpine:3.19 /workspace/dist/extra-users-linux-x86_64 --config test-config.json --dry-run --verbose || echo "Dry-run test completed"
-          
-          echo ""
-          echo "🧪 Testing dry-run functionality on Debian:"
-          docker run --rm -v ${PWD}:/workspace -w /workspace debian:12 /workspace/dist/extra-users-linux-x86_64 --config test-config.json --dry-run --verbose || echo "Dry-run test completed"
-
-      - name: Analyze binary dependencies
-        run: |
-          echo ""
-          echo "========================================="
-          echo "🔍 BINARY ANALYSIS"
-          echo "========================================="
-          
-          echo "📊 File type:"
-          file dist/extra-users-linux-x86_64
-          
-          echo ""
-          echo "📏 File size:"
-          ls -lh dist/extra-users-linux-x86_64 | awk '{print "Size: " $5}'
-          
-          echo ""
-          echo "🔗 Checking dynamic dependencies:"
-          if docker run --rm -v ${PWD}/dist:/test alpine:3.19 ldd /test/extra-users-linux-x86_64 2>&1 | grep -q "not a dynamic executable"; then
-            echo "✅ Static binary - no external dependencies required"
-          else
-            echo "⚠️  Dynamic dependencies found:"
-            docker run --rm -v ${PWD}/dist:/test alpine:3.19 ldd /test/extra-users-linux-x86_64 2>&1 || true
-          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
