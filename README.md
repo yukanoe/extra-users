@@ -9,6 +9,7 @@ A small Linux utility that ensures system users defined in a JSON file exist wit
 - Creates missing primary groups and users; updates shell/home when specified.
 - Can run from anywhere (Python script or PyInstaller binary).
 - Portable build via PyInstaller.
+- CI workflow publishes two Linux x86_64 binaries: glibc and Alpine (musl).
 - Logs actions and errors to `/var/log/extra-users.log` with rotation.
 
 ## System requirements
@@ -61,17 +62,22 @@ sudo ./extra-users
 
 ## Install prebuilt binary
 
-Download and install the public binary to `/usr/local/bin/extra-users`:
+The release provides two binaries (choose based on your target system):
+- `extra-users-linux-x86_64-glibc`: For Debian/Ubuntu/CentOS/RHEL and most glibc-based distros.
+- `extra-users-linux-x86_64-alpine`: For Alpine Linux and containers based on `alpine` (musl libc).
+
+
+Install glibc build:
 ```bash
-sudo wget -O /usr/local/bin/extra-users \
-  https://github.com/yukanoe/extra-users/releases/download/1.0.0/extra-users-linux-x86_64
+sudo curl -L -o /usr/local/bin/extra-users \
+  https://github.com/yukanoe/extra-users/releases/download/1.0.0/extra-users-linux-x86_64-glibc
 sudo chmod +x /usr/local/bin/extra-users
 ```
 
-Alternatively, using curl:
+Install Alpine build:
 ```bash
 sudo curl -L -o /usr/local/bin/extra-users \
-  https://github.com/yukanoe/extra-users/releases/download/1.0.0/extra-users-linux-x86_64
+  https://github.com/yukanoe/extra-users/releases/download/1.0.0/extra-users-linux-x86_64-alpine
 sudo chmod +x /usr/local/bin/extra-users
 ```
 
@@ -102,6 +108,12 @@ After building, run:
 chmod +x dist/extra-users
 sudo dist/extra-users
 ```
+
+## Releases (CI)
+
+GitHub Actions builds on tag push and attaches two artifacts to the release:
+- `extra-users-linux-x86_64-glibc` (Debian/Ubuntu/CentOS/RHEL, glibc systems)
+- `extra-users-linux-x86_64-alpine` (Alpine/musl systems)
 
 ## Security notes
 
