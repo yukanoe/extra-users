@@ -10,44 +10,68 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    strategy:
+      matrix:
+        include:
+          - name: "alpine-musl"
+            container: "alpine:3.19" 
+            shell: "sh"
+            packages: "python3 py3-pip gcc musl-dev linux-headers patchelf binutils"
+            suffix: "alpine"
+          - name: "debian-glibc"
+            container: "debian:11"
+            shell: "bash"
+            packages: "python3 python3-pip python3-venv gcc libc6-dev patchelf"
+            suffix: "glibc"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Build in older Debian container
+      - name: Build binary for ${{ matrix.name }}
         run: |
-          docker run --rm -v ${PWD}:/workspace -w /workspace debian:11 bash -c "
-            apt-get update && 
-            apt-get install -y python3 python3-pip python3-venv gcc libc6-dev patchelf && 
-            python3 -m venv venv &&
-            source venv/bin/activate &&
+          docker run --rm -v ${PWD}:/workspace -w /workspace ${{ matrix.container }} ${{ matrix.shell }} -c "
+            if [ '${{ matrix.container }}' = 'debian:11' ]; then
+              apt-get update && apt-get install -y ${{ matrix.packages }}
+              python3 -m venv venv && source venv/bin/activate
+            else
+              apk add --no-cache ${{ matrix.packages }}
+              python3 -m venv venv && source venv/bin/activate
+            fi &&
             pip install --upgrade pip &&
             pip install pyinstaller staticx &&
-            pyinstaller --onefile --strip --name extra-users extra-users.py &&
-            staticx dist/extra-users dist/extra-users-static &&
-            chmod 755 dist/extra-users-static
+            pyinstaller --onefile --strip --name extra-users-${{ matrix.suffix }} extra-users.py &&
+            staticx dist/extra-users-${{ matrix.suffix }} dist/extra-users-${{ matrix.suffix }}-static &&
+            chmod 755 dist/extra-users-${{ matrix.suffix }}-static
           "
 
-      - name: Fix permissions and prepare artifact
+      - name: Prepare artifacts
         run: |
-          sudo chown -R runner:runner dist/ 2>/dev/null || sudo chown -R $(whoami):$(whoami) dist/ 2>/dev/null || true
-          ls -la dist/
-          mv dist/extra-users-static dist/extra-users-linux-x86_64
+          sudo chown -R $(whoami):$(whoami) dist/ 2>/dev/null || true
+          mv dist/extra-users-${{ matrix.suffix }}-static dist/extra-users-linux-x86_64-${{ matrix.suffix }}
 
-      - name: Verify binary
-        run: |
-          file dist/extra-users-linux-x86_64
-          ls -la dist/extra-users-linux-x86_64
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: extra-users-${{ matrix.suffix }}
+          path: dist/extra-users-linux-x86_64-${{ matrix.suffix }}
 
-      - name: Test binary
-        run: |
-          docker run --rm -v ${PWD}/dist:/test debian:12 /test/extra-users-linux-x86_64 --help || echo "Test completed"
+  release:
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/extra-users-linux-x86_64
+            dist/extra-users-alpine/extra-users-linux-x86_64-alpine
+            dist/extra-users-glibc/extra-users-linux-x86_64-glibc
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
