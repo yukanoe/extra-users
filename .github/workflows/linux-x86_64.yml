@@ -80,11 +80,11 @@ jobs:
           echo "✅ BUILD SUMMARY"
           echo "========================================="
           echo "🏔️  Alpine binary: extra-users-linux-x86_64-alpine"
-          echo "   └─ Works on: Alpine Linux"
+          echo "   └─ Works on: Alpine Linux, Docker alpine images"
           echo "   └─ Size: $(ls -lh dist/extra-users-linux-x86_64-alpine | awk '{print $5}')"
           echo ""
           echo "🐧 Debian binary: extra-users-linux-x86_64-glibc"  
-          echo "   └─ Works on: Debian, Ubuntu, most glibc systems"
+          echo "   └─ Works on: Debian, Ubuntu, CentOS, RHEL, most glibc systems"
           echo "   └─ Size: $(ls -lh dist/extra-users-linux-x86_64-glibc | awk '{print $5}')"
           echo "========================================="
 
