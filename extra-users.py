@@ -175,6 +175,26 @@ def command_exists(cmd_name: str) -> bool:
     return shutil.which(cmd_name) is not None
 
 
+def user_in_group(username: str, group: str, verbose: bool, dry_run: bool) -> bool:
+    if dry_run:
+        return False
+    # Try via 'id -nG'
+    if command_exists("id"):
+        code, out, _ = run(["id", "-nG", username], verbose=verbose, dry_run=False)
+        if code == 0 and out:
+            groups = out.split()
+            return group in groups
+    # Fallback via getent group
+    code, out, _ = run(["getent", "group", group], verbose=verbose, dry_run=False)
+    if code == 0 and out:
+        parts = out.split(":")
+        if len(parts) >= 4:
+            members = parts[3]
+            member_list = [m.strip() for m in members.split(",") if m.strip()]
+            return username in member_list
+    return False
+
+
 def exists_in_getent(database: str, name: str, verbose: bool, dry_run: bool) -> bool:
     code, out, _ = run(["getent", database, name], verbose=verbose, dry_run=dry_run)
     # In dry-run, assume not existing to show intended actions; do not block creation
@@ -269,7 +289,7 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
         # and add the user to that group (supplementary group on BusyBox).
         if command_exists("adduser") and not command_exists("useradd") and user.group:
             ensure_group(user.group, create_if_missing=create_missing_group, verbose=verbose, dry_run=dry_run)
-            if command_exists("addgroup"):
+            if command_exists("addgroup") and not user_in_group(user.username, user.group, verbose, dry_run):
                 code, _, err = run(["addgroup", user.username, user.group], verbose=verbose, dry_run=dry_run)
                 if code != 0:
                     logger.error("Failed to add user '%s' to group '%s': %s", user.username, user.group, err)
@@ -325,14 +345,15 @@ def ensure_user(user: UserSpec, create_missing_group: bool, verbose: bool, dry_r
         if user.group and command_exists("addgroup"):
             # Ensure group exists then add user to it as a supplementary group
             ensure_group(user.group, create_if_missing=True, verbose=verbose, dry_run=dry_run)
-            code, _, err = run(["addgroup", user.username, user.group], verbose=verbose, dry_run=dry_run)
-            if code != 0:
-                logger.error("Failed to add user '%s' to group '%s': %s", user.username, user.group, err)
-                raise RuntimeError(f"Failed to add user '{user.username}' to group '{user.group}': {err}")
-            changed = True
-            if verbose:
-                print(f"Ensured {user.username} is in group: {user.group}")
-            logger.info("Ensured %s is in group %s", user.username, user.group)
+            if not user_in_group(user.username, user.group, verbose, dry_run):
+                code, _, err = run(["addgroup", user.username, user.group], verbose=verbose, dry_run=dry_run)
+                if code != 0:
+                    logger.error("Failed to add user '%s' to group '%s': %s", user.username, user.group, err)
+                    raise RuntimeError(f"Failed to add user '{user.username}' to group '{user.group}': {err}")
+                changed = True
+                if verbose:
+                    print(f"Ensured {user.username} is in group: {user.group}")
+                logger.info("Ensured %s is in group %s", user.username, user.group)
 
         # Home and shell updates are skipped on systems without usermod
         if changed:
