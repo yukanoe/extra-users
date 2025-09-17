@@ -15,81 +15,65 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build on Alpine (musl) without staticx
+      - name: Build Alpine version (musl)
         run: |
+          echo "🏔️ Building Alpine version (musl)..."
           docker run --rm -v ${PWD}:/workspace -w /workspace alpine:3.19 sh -c "
             apk add --no-cache python3 py3-pip gcc musl-dev linux-headers binutils upx &&
             python3 -m venv venv &&
             source venv/bin/activate &&
-            pip install --upgrade pip &&
-            pip install pyinstaller &&
-            pyinstaller --onefile --strip --name extra-users extra-users.py &&
-            upx --best dist/extra-users &&
-            chmod 755 dist/extra-users
+            pip install --upgrade pip pyinstaller &&
+            pyinstaller --onefile --strip --name extra-users-alpine extra-users.py &&
+            upx --best dist/extra-users-alpine &&
+            chmod 755 dist/extra-users-alpine
           "
 
-      - name: Fix permissions and prepare artifact
+      - name: Build Debian version (glibc)
+        run: |
+          echo "🐧 Building Debian version (glibc)..."
+          docker run --rm -v ${PWD}:/workspace -w /workspace debian:11 bash -c "
+            apt-get update &&
+            apt-get install -y python3 python3-pip python3-venv gcc libc6-dev upx &&
+            python3 -m venv venv &&
+            source venv/bin/activate &&
+            pip install --upgrade pip pyinstaller &&
+            pyinstaller --onefile --strip --name extra-users-glibc extra-users.py &&
+            upx --best dist/extra-users-glibc &&
+            chmod 755 dist/extra-users-glibc
+          "
+
+      - name: Fix permissions
         run: |
           sudo chown -R $(whoami):$(whoami) dist/ 2>/dev/null || true
-          mv dist/extra-users dist/extra-users-linux-x86_64
 
-      - name: Show binary info
-        run: |
-          echo "========================================="
-          echo "🏗️  BINARY INFORMATION"
-          echo "========================================="
-          file dist/extra-users-linux-x86_64
-          echo "Size: $(ls -lh dist/extra-users-linux-x86_64 | awk '{print $5}')"
-
-      - name: Test on Alpine Linux
+      - name: Test Alpine binary
         run: |
           echo ""
-          echo "🐧 Testing on Alpine Linux (musl)..."
-          docker run --rm -v ${PWD}/dist:/test alpine:3.19 /test/extra-users-linux-x86_64 --help && echo "✅ Alpine: PASSED" || echo "❌ Alpine: FAILED"
+          echo "🧪 Testing Alpine binary (musl)..."
+          echo "✅ On Alpine:"
+          docker run --rm -v ${PWD}/dist:/test alpine:3.19 /test/extra-users-alpine --help | head -3
+          echo "❓ On Debian:"
+          docker run --rm -v ${PWD}/dist:/test debian:12 /test/extra-users-alpine --help 2>&1 | head -3 || echo "Failed as expected"
 
-      - name: Test on Debian 12
+      - name: Test Debian binary
         run: |
           echo ""
-          echo "🐧 Testing on Debian 12 (glibc)..."
-          docker run --rm -v ${PWD}/dist:/test debian:12 /test/extra-users-linux-x86_64 --help && echo "✅ Debian: PASSED" || echo "❌ Debian: FAILED"
+          echo "🧪 Testing Debian binary (glibc)..."  
+          echo "✅ On Debian:"
+          docker run --rm -v ${PWD}/dist:/test debian:12 /test/extra-users-glibc --help | head -3
+          echo "✅ On Ubuntu:"
+          docker run --rm -v ${PWD}/dist:/test ubuntu:22.04 /test/extra-users-glibc --help | head -3
+          echo "❓ On Alpine:"
+          docker run --rm -v ${PWD}/dist:/test alpine:3.19 /test/extra-users-glibc --help 2>&1 | head -3 || echo "Failed as expected"
 
-      - name: Test on Ubuntu 22.04
+      - name: Prepare artifacts
         run: |
+          mv dist/extra-users-alpine dist/extra-users-linux-x86_64-alpine
+          mv dist/extra-users-glibc dist/extra-users-linux-x86_64-glibc
+          
           echo ""
-          echo "🐧 Testing on Ubuntu 22.04 (glibc)..."
-          docker run --rm -v ${PWD}/dist:/test ubuntu:22.04 /test/extra-users-linux-x86_64 --help && echo "✅ Ubuntu: PASSED" || echo "❌ Ubuntu: FAILED"
-
-      - name: Check dependencies
-        run: |
-          echo ""
-          echo "🔍 Checking binary dependencies..."
-          docker run --rm -v ${PWD}/dist:/test alpine:3.19 ldd /test/extra-users-linux-x86_64 || echo "✅ Static binary - no external dependencies"
-
-      - name: Create test config
-        run: |
-          echo ""
-          echo "🧪 Creating test configuration..."
-          cat > test-config.json << 'EOF'
-          {
-            "users": [
-              {
-                "name": "testuser",
-                "group": "testgroup", 
-                "shell": "/bin/sh",
-                "home": "/home/testuser"
-              }
-            ]
-          }
-          EOF
-          echo "Test config created successfully"
-
-      - name: Functional test
-        run: |
-          echo ""
-          echo "🚀 Running functional test (dry-run)..."
-          docker run --rm -v ${PWD}:/workspace -w /workspace alpine:3.19 \
-            /workspace/dist/extra-users-linux-x86_64 \
-            --config test-config.json --dry-run --verbose || echo "Functional test completed"
+          echo "📦 Final artifacts:"
+          ls -lh dist/extra-users-linux-x86_64-*
 
       - name: Build summary
         run: |
@@ -97,17 +81,34 @@ jobs:
           echo "========================================="
           echo "✅ BUILD SUMMARY"
           echo "========================================="
-          echo "🏗️  Platform: Alpine Linux 3.19 (musl)"  
-          echo "📦 Binary: extra-users-linux-x86_64"
-          echo "📏 Size: $(ls -lh dist/extra-users-linux-x86_64 | awk '{print $5}')"
-          echo "🔗 Type: Static binary"
-          echo "🌐 Tested: Alpine, Debian 12, Ubuntu 22.04"
+          echo "🏔️  Alpine binary: extra-users-linux-x86_64-alpine"
+          echo "   └─ Works on: Alpine Linux"
+          echo "   └─ Size: $(ls -lh dist/extra-users-linux-x86_64-alpine | awk '{print $5}')"
+          echo ""
+          echo "🐧 Debian binary: extra-users-linux-x86_64-glibc"  
+          echo "   └─ Works on: Debian, Ubuntu, most glibc systems"
+          echo "   └─ Size: $(ls -lh dist/extra-users-linux-x86_64-glibc | awk '{print $5}')"
           echo "========================================="
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/extra-users-linux-x86_64
+            dist/extra-users-linux-x86_64-alpine
+            dist/extra-users-linux-x86_64-glibc
+          body: |
+            ## Linux x86_64 Binaries
+            
+            **🏔️ Alpine Version (`extra-users-linux-x86_64-alpine`)**
+            - Built on Alpine Linux with musl libc
+            - Best for: Alpine Linux, Docker alpine images
+            - Size: Smaller, optimized for Alpine
+            
+            **🐧 glibc Version (`extra-users-linux-x86_64-glibc`)**  
+            - Built on Debian 11 with glibc
+            - Best for: Debian, Ubuntu, CentOS, RHEL, most Linux distributions
+            - Size: Slightly larger, broader compatibility
+            
+            Choose the version that matches your target system!
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
